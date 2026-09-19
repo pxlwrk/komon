@@ -1,0 +1,1004 @@
+// Komon - Datenmodell fuer das Management mehrerer Communities.
+//
+// Hinweis: Die Datenbank ist SQLite, damit die Anwendung ohne zusaetzliche
+// Infrastruktur startet. SQLite kennt in Prisma keine Enums und keine
+// Skalar-Listen. Alle aufzaehlbaren Werte liegen deshalb als String vor und
+// werden in src/lib/enums.ts zentral definiert und per Zod validiert.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Personen, Konten und Sitzungen
+// ---------------------------------------------------------------------------
+
+/// Eine Person ist der zentrale Stammdatensatz. Sie kann Teilnehmerin in
+/// mehreren Communities sein. Besitzt sie ein Passwort, kann sie sich anmelden.
+model Person {
+  id           String  @id @default(cuid())
+  salutation   String? // HERR | FRAU | DIVERS | KEINE
+  title        String?
+  firstName    String
+  lastName     String
+  displayName  String?
+  pronouns     String?
+  primaryEmail String  @unique
+  phone        String?
+  mobile       String?
+
+  street     String?
+  postalCode String?
+  city       String?
+  region     String?
+  country    String?
+
+  birthDate    DateTime?
+  organization String?
+  jobTitle     String?
+  website      String?
+  notes        String?
+
+  locale   String @default("de-DE")
+  timezone String @default("Europe/Berlin")
+
+  /// ACTIVE | INACTIVE | ARCHIVED
+  status String @default("ACTIVE")
+
+  // Kontodaten. Ohne passwordHash ist keine Anmeldung moeglich.
+  passwordHash        String?
+  isSuperAdmin        Boolean   @default(false)
+  mustChangePassword  Boolean   @default(false)
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // Datenschutz
+  consentAt          DateTime?
+  consentText        String?
+  dataRetentionUntil DateTime?
+
+  avatarFileId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  emailAddresses EmailAddress[]
+  sessions       Session[]
+  memberships    Membership[]
+
+  listSubscriptions ListSubscription[]
+  listMessages      ListMessage[]
+  moderatedMessages ListMessage[]      @relation("ListMessageModerator")
+
+  authoredEmails  EmailMessage[]
+  emailDeliveries EmailDelivery[]
+
+  uploadedFiles   FileVersion[]
+  createdFolders  Folder[]
+  organizedEvents Event[]              @relation("EventOrganizer")
+  createdEvents   Event[]              @relation("EventCreator")
+  participations  EventParticipation[]
+  assignedTasks   EventTask[]          @relation("EventTaskAssignee")
+  eventFeedback   EventFeedback[]
+  calendarEntries CalendarEntry[]
+  journalEntries  JournalEntry[]       @relation("JournalAuthor")
+  journalComments JournalComment[]
+  auditEntries    AuditLog[]
+  sentInvitations AccountInvitation[]  @relation("InvitationSender")
+
+  @@index([lastName, firstName])
+  @@index([status])
+}
+
+/// Weitere E-Mail-Adressen einer Person. Mailinglisten erkennen Absender
+/// anhand aller hinterlegten Adressen, aehnlich wie Mailman.
+model EmailAddress {
+  id          String    @id @default(cuid())
+  personId    String
+  address     String    @unique
+  label       String?
+  isPrimary   Boolean   @default(false)
+  verifiedAt  DateTime?
+  /// ACTIVE | BOUNCING | DISABLED
+  status      String    @default("ACTIVE")
+  bounceCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  person            Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
+  listSubscriptions ListSubscription[]
+
+  @@index([personId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  personId  String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  /// Zuletzt gewaehlte Community im UI
+  activeCommunityId String?
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Communities, Mitgliedschaften, Rollen
+// ---------------------------------------------------------------------------
+
+model Community {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+  purpose     String?
+  timezone    String  @default("Europe/Berlin")
+  locale      String  @default("de-DE")
+  /// Domain fuer Gruppenmailadressen, zum Beispiel "listen.example.org"
+  mailDomain  String?
+  /// Absenderadresse fuer ausgehende Nachrichten
+  senderEmail String?
+  senderName  String?
+  accentColor String  @default("#1c66f0")
+  /// ACTIVE | ARCHIVED
+  status      String  @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   Membership[]
+  roles         Role[]
+  groups        Group[]
+  customFields  CustomFieldDefinition[]
+  mailingLists  MailingList[]
+  emailMessages EmailMessage[]
+  templates     EmailTemplate[]
+  folders       Folder[]
+  files         StoredFile[]
+  events        Event[]
+  calendar      CalendarEntry[]
+  journal       JournalEntry[]
+  tags          Tag[]
+  auditLogs     AuditLog[]
+  invitations   AccountInvitation[]
+}
+
+/// Verbindet eine Person mit einer Community und traegt die
+/// community-spezifischen Stammdaten.
+model Membership {
+  id          String @id @default(cuid())
+  communityId String
+  personId    String
+
+  memberNumber   String?
+  /// ACTIVE | PENDING | PAUSED | LEFT | BLOCKED
+  status         String    @default("ACTIVE")
+  joinedAt       DateTime  @default(now())
+  leftAt         DateTime?
+  notes          String?
+  /// Funktion innerhalb der Community, rein beschreibend
+  position       String?
+  /// NONE | REGULAR | DIGEST fuer Sammel-Rundmails
+  mailPreference String    @default("REGULAR")
+  /// Erlaubt Rundmails an diese Person
+  allowBulkEmail Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  person    Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  roles        MembershipRole[]
+  groupMembers GroupMember[]
+  fieldValues  CustomFieldValue[]
+  tags         MembershipTag[]
+
+  @@unique([communityId, personId])
+  @@unique([communityId, memberNumber])
+  @@index([communityId, status])
+}
+
+/// Rollen buendeln Berechtigungen. Systemrollen werden beim Anlegen einer
+/// Community erzeugt und koennen ergaenzt werden.
+model Role {
+  id          String  @id @default(cuid())
+  communityId String
+  key         String
+  name        String
+  description String?
+  /// JSON-Array mit Berechtigungsschluesseln, siehe src/lib/permissions.ts
+  permissions String  @default("[]")
+  isSystem    Boolean @default(false)
+  /// Kleinere Zahl bedeutet mehr Verantwortung, nur fuer die Sortierung
+  rank        Int     @default(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community   Community           @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  memberships MembershipRole[]
+  folderRules FolderAccessRule[]
+  invitations AccountInvitation[]
+
+  @@unique([communityId, key])
+}
+
+model MembershipRole {
+  membershipId String
+  roleId       String
+  assignedAt   DateTime @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, roleId])
+  @@index([roleId])
+}
+
+/// Gruppen bilden Untergliederungen wie Arbeitskreise oder Regionalgruppen und
+/// dienen als Verteiler fuer Mailinglisten und Einladungen.
+model Group {
+  id          String  @id @default(cuid())
+  communityId String
+  key         String
+  name        String
+  description String?
+  /// STATIC | SMART
+  type        String  @default("STATIC")
+  /// Filterdefinition als JSON fuer SMART-Gruppen
+  filter      String?
+  color       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community    Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  members      GroupMember[]
+  mailingLists MailingList[]
+
+  @@unique([communityId, key])
+}
+
+model GroupMember {
+  groupId      String
+  membershipId String
+  addedAt      DateTime @default(now())
+
+  group      Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, membershipId])
+  @@index([membershipId])
+}
+
+/// Frei definierbare Stammdatenfelder je Community.
+model CustomFieldDefinition {
+  id          String  @id @default(cuid())
+  communityId String
+  key         String
+  label       String
+  /// TEXT | LONGTEXT | NUMBER | DATE | BOOLEAN | SELECT | MULTISELECT | EMAIL | PHONE | URL
+  type        String  @default("TEXT")
+  description String?
+  /// JSON-Array mit Auswahlmoeglichkeiten fuer SELECT und MULTISELECT
+  options     String?
+  required    Boolean @default(false)
+  /// Sichtbar fuer alle Mitglieder oder nur fuer die Verwaltung
+  visibility  String  @default("STAFF")
+  position    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community Community          @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  values    CustomFieldValue[]
+
+  @@unique([communityId, key])
+}
+
+model CustomFieldValue {
+  id           String  @id @default(cuid())
+  definitionId String
+  membershipId String
+  value        String?
+
+  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  membership Membership            @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, membershipId])
+  @@index([membershipId])
+}
+
+model Tag {
+  id          String  @id @default(cuid())
+  communityId String
+  name        String
+  color       String?
+  description String?
+
+  createdAt DateTime @default(now())
+
+  community   Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  memberships MembershipTag[]
+  journal     JournalEntryTag[]
+  events      EventTag[]
+
+  @@unique([communityId, name])
+}
+
+model MembershipTag {
+  membershipId String
+  tagId        String
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, tagId])
+  @@index([tagId])
+}
+
+// ---------------------------------------------------------------------------
+// E-Mail: Vorlagen, ausgehende Nachrichten, Zustellungen
+// ---------------------------------------------------------------------------
+
+model EmailTemplate {
+  id          String  @id @default(cuid())
+  communityId String
+  key         String
+  name        String
+  description String?
+  subject     String
+  bodyText    String
+  bodyHtml    String?
+  /// JSON-Array der unterstuetzten Platzhalter
+  variables   String  @default("[]")
+  isSystem    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  messages  EmailMessage[]
+
+  @@unique([communityId, key])
+}
+
+/// Eine komponierte Nachricht. Je Empfaengerin entsteht daraus eine
+/// EmailDelivery, die vom Versand-Worker abgearbeitet wird.
+model EmailMessage {
+  id          String  @id @default(cuid())
+  communityId String
+  templateId  String?
+  authorId    String?
+
+  /// CAMPAIGN | TRANSACTIONAL | LIST_DISTRIBUTION | EVENT_INVITATION | EVENT_REMINDER | EVENT_FOLLOWUP
+  kind     String  @default("CAMPAIGN")
+  subject  String
+  bodyText String
+  bodyHtml String?
+
+  fromName    String?
+  fromEmail   String?
+  replyTo     String?
+  /// Zusaetzliche Kopfzeilen als JSON, etwa List-Id fuer Gruppenmailadressen
+  headersJson String?
+
+  /// DRAFT | SCHEDULED | QUEUED | SENDING | SENT | FAILED | CANCELLED
+  status      String    @default("DRAFT")
+  scheduledAt DateTime?
+  sentAt      DateTime?
+
+  /// Herkunft, wenn die Nachricht aus einer Mailingliste entstanden ist
+  sourceListMessageId String?
+  /// Bezug zu einem Event, falls vorhanden
+  eventId             String?
+
+  recipientCount Int @default(0)
+  sentCount      Int @default(0)
+  failedCount    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community         Community       @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  template          EmailTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  author            Person?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  event             Event?          @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  sourceListMessage ListMessage?    @relation(fields: [sourceListMessageId], references: [id], onDelete: SetNull)
+  deliveries        EmailDelivery[]
+
+  @@index([communityId, status])
+  @@index([status, scheduledAt])
+}
+
+model EmailDelivery {
+  id        String  @id @default(cuid())
+  messageId String
+  personId  String?
+
+  toAddress String
+  toName    String?
+
+  /// QUEUED | SENDING | SENT | FAILED | BOUNCED | SKIPPED
+  status     String    @default("QUEUED")
+  attempts   Int       @default(0)
+  lastError  String?
+  sentAt     DateTime?
+  providerId String?
+  /// Persoenlicher Token, etwa fuer Zu- und Absagen ohne Anmeldung
+  token      String?   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  message EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  person  Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Gruppenmailadressen im Stil von Mailman
+// ---------------------------------------------------------------------------
+
+model MailingList {
+  id          String  @id @default(cuid())
+  communityId String
+  name        String
+  /// Lokalteil der Adresse, zum Beispiel "vorstand"
+  localPart   String
+  /// Vollstaendige Adresse, zum Beispiel "vorstand@listen.example.org"
+  address     String  @unique
+  description String?
+
+  /// ANNOUNCE | DISCUSSION
+  listType           String @default("DISCUSSION")
+  /// OPEN | SUBSCRIBERS | MEMBERS | MODERATORS
+  postingPolicy      String @default("SUBSCRIBERS")
+  /// NONE | NON_SUBSCRIBERS | ALL
+  moderationPolicy   String @default("NON_SUBSCRIBERS")
+  /// OPEN | CONFIRM | APPROVAL | CLOSED
+  subscriptionPolicy String @default("APPROVAL")
+  /// LIST | SENDER
+  replyToMode        String @default("LIST")
+  /// PUBLIC | MEMBERS | SUBSCRIBERS | PRIVATE
+  archivePolicy      String @default("SUBSCRIBERS")
+
+  subjectPrefix        String?
+  footerText           String?
+  maxMessageSize       Int     @default(10485760)
+  /// Nur Mitglieder dieser Gruppe werden automatisch eingetragen
+  autoSubscribeGroupId String?
+  isActive             Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community          Community          @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  autoSubscribeGroup Group?             @relation(fields: [autoSubscribeGroupId], references: [id], onDelete: SetNull)
+  subscriptions      ListSubscription[]
+  messages           ListMessage[]
+
+  @@unique([communityId, localPart])
+  @@index([communityId])
+}
+
+model ListSubscription {
+  id             String  @id @default(cuid())
+  listId         String
+  personId       String
+  emailAddressId String?
+
+  /// SUBSCRIBER | MODERATOR | OWNER
+  role         String  @default("SUBSCRIBER")
+  /// REGULAR | DIGEST | NONE
+  deliveryMode String  @default("REGULAR")
+  /// PENDING | ACTIVE | UNSUBSCRIBED | BOUNCING | BLOCKED
+  status       String  @default("ACTIVE")
+  /// Beitraege dieser Person immer moderieren
+  moderated    Boolean @default(false)
+  bounceScore  Int     @default(0)
+
+  subscribedAt   DateTime  @default(now())
+  unsubscribedAt DateTime?
+
+  list         MailingList   @relation(fields: [listId], references: [id], onDelete: Cascade)
+  person       Person        @relation(fields: [personId], references: [id], onDelete: Cascade)
+  emailAddress EmailAddress? @relation(fields: [emailAddressId], references: [id], onDelete: SetNull)
+
+  @@unique([listId, personId])
+  @@index([listId, status])
+}
+
+/// Archivierte Nachricht einer Gruppenmailadresse.
+model ListMessage {
+  id     String @id @default(cuid())
+  listId String
+
+  /// Message-ID aus dem Kopf der eingehenden Nachricht
+  messageIdHeader String  @unique
+  inReplyTo       String?
+  referencesRaw   String?
+  /// Wurzelnachricht des Gespraechs
+  threadId        String?
+
+  fromName    String?
+  fromAddress String
+  senderId    String?
+  subject     String
+  bodyText    String
+  bodyHtml    String?
+  sizeBytes   Int     @default(0)
+
+  /// PENDING | APPROVED | REJECTED | DISTRIBUTED | DISCARDED
+  status           String    @default("PENDING")
+  moderationReason String?
+  moderatorId      String?
+  moderatedAt      DateTime?
+
+  receivedAt     DateTime  @default(now())
+  distributedAt  DateTime?
+  recipientCount Int       @default(0)
+
+  list          MailingList             @relation(fields: [listId], references: [id], onDelete: Cascade)
+  sender        Person?                 @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  moderator     Person?                 @relation("ListMessageModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
+  attachments   ListMessageAttachment[]
+  distributions EmailMessage[]
+
+  @@index([listId, status])
+  @@index([listId, threadId])
+}
+
+model ListMessageAttachment {
+  id            String @id @default(cuid())
+  listMessageId String
+  fileName      String
+  mimeType      String
+  sizeBytes     Int
+  storageKey    String
+
+  listMessage ListMessage @relation(fields: [listMessageId], references: [id], onDelete: Cascade)
+
+  @@index([listMessageId])
+}
+
+// ---------------------------------------------------------------------------
+// Dateiablage
+// ---------------------------------------------------------------------------
+
+model Folder {
+  id          String  @id @default(cuid())
+  communityId String
+  parentId    String?
+  name        String
+  /// Materialisierter Pfad zur schnellen Anzeige, zum Beispiel "/Protokolle/2026"
+  path        String
+  description String?
+  /// COMMUNITY | RESTRICTED
+  visibility  String  @default("COMMUNITY")
+  isSystem    Boolean @default(false)
+  createdById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community Community          @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  parent    Folder?            @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]           @relation("FolderTree")
+  createdBy Person?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  files     StoredFile[]
+  rules     FolderAccessRule[]
+
+  @@unique([communityId, path])
+  @@index([communityId, parentId])
+}
+
+/// Zusaetzliche Rechte je Ordner. Ohne Regeln gilt die Sichtbarkeit des Ordners.
+model FolderAccessRule {
+  id       String @id @default(cuid())
+  folderId String
+  roleId   String
+  /// READ | WRITE | MANAGE
+  level    String @default("READ")
+
+  folder Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, roleId])
+}
+
+model StoredFile {
+  id          String  @id @default(cuid())
+  communityId String
+  folderId    String
+  name        String
+  description String?
+  mimeType    String
+  sizeBytes   Int
+  /// Laufende Nummer der aktuellen Fassung
+  version     Int     @default(1)
+  checksum    String?
+  storageKey  String
+  isArchived  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community Community       @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  folder    Folder          @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  versions  FileVersion[]
+  events    EventResource[]
+
+  @@index([communityId, folderId])
+}
+
+model FileVersion {
+  id           String   @id @default(cuid())
+  fileId       String
+  version      Int
+  storageKey   String
+  sizeBytes    Int
+  checksum     String?
+  mimeType     String
+  note         String?
+  uploadedById String?
+  uploadedAt   DateTime @default(now())
+
+  file       StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  uploadedBy Person?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@unique([fileId, version])
+}
+
+// ---------------------------------------------------------------------------
+// Eventmanagement
+// ---------------------------------------------------------------------------
+
+model Event {
+  id          String  @id @default(cuid())
+  communityId String
+  title       String
+  slug        String
+  summary     String?
+  description String?
+
+  /// DRAFT | PLANNING | PUBLISHED | REGISTRATION_CLOSED | RUNNING | COMPLETED | CANCELLED
+  status String @default("DRAFT")
+
+  startAt  DateTime
+  endAt    DateTime
+  allDay   Boolean  @default(false)
+  timezone String   @default("Europe/Berlin")
+
+  locationName    String?
+  locationAddress String?
+  onlineUrl       String?
+
+  capacity             Int?
+  waitlistEnabled      Boolean   @default(true)
+  registrationOpensAt  DateTime?
+  registrationClosesAt DateTime?
+  allowGuests          Boolean   @default(false)
+  /// COMMUNITY | GROUP | INVITE_ONLY | PUBLIC
+  visibility           String    @default("COMMUNITY")
+
+  organizerId String?
+  createdById String?
+
+  // Nachbereitung
+  debriefNotes   String?
+  minutes        String?
+  lessonsLearned String?
+  actualCost     Float?
+  plannedBudget  Float?
+  debriefDoneAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community       Community            @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  organizer       Person?              @relation("EventOrganizer", fields: [organizerId], references: [id], onDelete: SetNull)
+  createdBy       Person?              @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  participations  EventParticipation[]
+  agenda          EventAgendaItem[]
+  tasks           EventTask[]
+  feedback        EventFeedback[]
+  resources       EventResource[]
+  emails          EmailMessage[]
+  calendarEntries CalendarEntry[]
+  journalEntries  JournalEntry[]
+  tags            EventTag[]
+
+  @@unique([communityId, slug])
+  @@index([communityId, startAt])
+  @@index([communityId, status])
+}
+
+/// Einladung und Anmeldung in einem Datensatz, damit der Weg von der Einladung
+/// ueber die Zusage bis zur Teilnahme luecklos nachvollziehbar bleibt.
+model EventParticipation {
+  id       String  @id @default(cuid())
+  eventId  String
+  personId String?
+
+  email String
+  name  String?
+
+  /// INVITED | SELF_REGISTERED | ADDED_BY_STAFF
+  source String @default("INVITED")
+  /// INVITED | ACCEPTED | DECLINED | TENTATIVE | WAITLIST | CANCELLED
+  status String @default("INVITED")
+
+  /// Token fuer Zu- und Absagen ohne Anmeldung
+  responseToken String  @unique @default(cuid())
+  guestCount    Int     @default(0)
+  note          String?
+  dietaryNotes  String?
+
+  invitedAt   DateTime  @default(now())
+  respondedAt DateTime?
+  remindedAt  DateTime?
+  checkedInAt DateTime?
+  attended    Boolean?
+  noShow      Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event  Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  person Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, email])
+  @@index([eventId, status])
+}
+
+model EventAgendaItem {
+  id              String    @id @default(cuid())
+  eventId         String
+  position        Int       @default(0)
+  startAt         DateTime?
+  durationMinutes Int?
+  title           String
+  speaker         String?
+  notes           String?
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, position])
+}
+
+model EventTask {
+  id          String    @id @default(cuid())
+  eventId     String
+  title       String
+  description String?
+  /// PLANNING | EXECUTION | FOLLOWUP
+  phase       String    @default("PLANNING")
+  /// OPEN | IN_PROGRESS | DONE | CANCELLED
+  status      String    @default("OPEN")
+  dueAt       DateTime?
+  assigneeId  String?
+  completedAt DateTime?
+  position    Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignee Person? @relation("EventTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, phase])
+}
+
+model EventFeedback {
+  id       String  @id @default(cuid())
+  eventId  String
+  personId String?
+  rating   Int?
+  comment  String?
+  /// Wurde der Beitrag in der Nachbereitung beruecksichtigt
+  reviewed Boolean @default(false)
+
+  submittedAt DateTime @default(now())
+
+  event  Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  person Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+}
+
+/// Verknuepft Dateien aus der Ablage mit einem Event, etwa Einladungsflyer,
+/// Praesentationen oder das Protokoll.
+model EventResource {
+  id      String  @id @default(cuid())
+  eventId String
+  fileId  String
+  /// BRIEFING | PRESENTATION | MINUTES | PHOTO | OTHER
+  kind    String  @default("OTHER")
+  label   String?
+
+  addedAt DateTime @default(now())
+
+  event Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  file  StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, fileId])
+}
+
+model EventTag {
+  eventId String
+  tagId   String
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, tagId])
+  @@index([tagId])
+}
+
+// ---------------------------------------------------------------------------
+// Terminmanagement
+// ---------------------------------------------------------------------------
+
+model CalendarEntry {
+  id          String  @id @default(cuid())
+  communityId String
+  title       String
+  description String?
+  location    String?
+
+  startAt DateTime
+  endAt   DateTime
+  allDay  Boolean  @default(false)
+
+  /// MEETING | DEADLINE | REMINDER | PUBLICATION | MILESTONE | OTHER
+  kind       String  @default("MEETING")
+  /// COMMUNITY | STAFF | PRIVATE
+  visibility String  @default("COMMUNITY")
+  /// iCalendar RRULE, zum Beispiel "FREQ=MONTHLY;BYDAY=1MO"
+  recurrence String?
+
+  eventId        String?
+  journalEntryId String?
+  ownerId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community    Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  event        Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  owner        Person?       @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([communityId, startAt])
+}
+
+// ---------------------------------------------------------------------------
+// Content-Journal
+// ---------------------------------------------------------------------------
+
+model JournalEntry {
+  id          String  @id @default(cuid())
+  communityId String
+  title       String
+  slug        String
+  summary     String?
+  content     String  @default("")
+
+  /// NOTE | POST | NEWSLETTER | ANNOUNCEMENT | MINUTES | DECISION | RETROSPECTIVE
+  type       String @default("NOTE")
+  /// IDEA | DRAFT | IN_REVIEW | SCHEDULED | PUBLISHED | ARCHIVED
+  status     String @default("DRAFT")
+  /// WEBSITE | NEWSLETTER | MAILINGLIST | SOCIAL | INTERNAL
+  channel    String @default("INTERNAL")
+  /// COMMUNITY | STAFF | PUBLIC
+  visibility String @default("COMMUNITY")
+
+  plannedAt   DateTime?
+  publishedAt DateTime?
+
+  authorId String?
+  eventId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  community       Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author          Person?           @relation("JournalAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  event           Event?            @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  comments        JournalComment[]
+  tags            JournalEntryTag[]
+  calendarEntries CalendarEntry[]
+
+  @@unique([communityId, slug])
+  @@index([communityId, status])
+  @@index([communityId, plannedAt])
+}
+
+model JournalComment {
+  id       String  @id @default(cuid())
+  entryId  String
+  authorId String?
+  body     String
+
+  createdAt DateTime @default(now())
+
+  entry  JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  author Person?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([entryId])
+}
+
+model JournalEntryTag {
+  entryId String
+  tagId   String
+
+  entry JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tag   Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, tagId])
+  @@index([tagId])
+}
+
+// ---------------------------------------------------------------------------
+// Einladungen zu Benutzerkonten und Protokoll
+// ---------------------------------------------------------------------------
+
+model AccountInvitation {
+  id          String    @id @default(cuid())
+  communityId String
+  email       String
+  firstName   String?
+  lastName    String?
+  roleId      String?
+  token       String    @unique
+  invitedById String?
+  message     String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  role      Role?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  invitedBy Person?   @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([communityId, email])
+}
+
+model AuditLog {
+  id          String  @id @default(cuid())
+  communityId String?
+  actorId     String?
+  action      String
+  entityType  String
+  entityId    String?
+  summary     String
+  /// Zusatzinformationen als JSON
+  meta        String?
+  ipAddress   String?
+
+  createdAt DateTime @default(now())
+
+  community Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  actor     Person?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([communityId, createdAt])
+  @@index([entityType, entityId])
+}

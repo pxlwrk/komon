@@ -1,0 +1,29 @@
+node_modules
+.next
+out
+build
+dist
+coverage
+
+.env
+.env.local
+.env*.local
+
+*.log
+npm-debug.log*
+
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# Der Ablageordner bleibt leer im Repository, sein Inhalt gehoert nicht dazu.
+storage/*
+!storage/.gitkeep
+
+# Temporaere Ordner aus Testlaeufen
+tmp/
+
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
