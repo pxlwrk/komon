@@ -5,8 +5,9 @@
  * Mehrmandantenfähigkeit sichtbar wird: einen Verein mit Vorstand und
  * Arbeitskreisen sowie eine offene Nachbarschaftsinitiative.
  *
- * Start mit `npm run db:seed`. Der Seed ist wiederholbar: vorhandene
- * Beispieldaten werden zuvor entfernt.
+ * Dieses Modul hat keine Nebenwirkungen beim Import. Ausgeführt wird es über
+ * `npm run db:seed`, das prisma/seed-cli.ts aufruft. Der Seed ist
+ * wiederholbar: vorhandene Beispieldaten werden zuvor entfernt.
  */
 
 import bcrypt from 'bcryptjs';
@@ -160,7 +161,11 @@ async function createCommunity(params: {
   return { community, roleByKey };
 }
 
-async function main(): Promise<void> {
+/**
+ * Legt die Beispieldaten an. Vorhandene Beispieldaten werden zuvor entfernt,
+ * der Aufruf ist also wiederholbar.
+ */
+export async function seed(): Promise<void> {
   console.log('Beispieldaten werden angelegt.');
   await reset();
 
@@ -883,11 +888,4 @@ async function main(): Promise<void> {
   console.log('  tarek.osman@example.org     Eventteam, Leitung der Nachbarschaft');
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+export { prisma as seedPrisma };

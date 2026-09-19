@@ -161,6 +161,7 @@ und lassen sich in der Nachrichtenansicht erneut anstoßen.
 | `npm run db:migrate` | Änderungen am Datenmodell einspielen |
 | `npm run db:deploy` | Vorhandene Migrationen anwenden, ohne neue zu erzeugen |
 | `npm run db:seed` | Beispieldaten laden |
+| `npm run db:seed:if-empty` | Beispieldaten nur bei leerer Datenbank laden |
 | `npm run db:reset` | Datenbank zurücksetzen und neu füllen |
 | `npm run mail:worker` | Versand-Worker starten |
 
@@ -186,6 +187,11 @@ kommt damit zurecht:
   einsehbar.
 - **Migration**: Das Skript `vercel-build` führt `prisma migrate deploy` vor
   dem Bauen aus, sodass das Schema stets zur ausgelieferten Fassung passt.
+- **Beispieldaten**: Steht `SEED_DEMO_DATA` auf `true`, legt derselbe Schritt
+  die Beispieldaten an, **sofern die Datenbank noch leer ist**. Ein erneutes
+  Deployment lässt vorhandene Daten unangetastet. Das ist für eine
+  Testinstallation gedacht, deren Datenbank von außen nicht erreichbar ist.
+  Im echten Betrieb bleibt die Variable weg.
 
 Ein Punkt bleibt offen: Der Versand-Worker braucht einen dauerhaften Prozess.
 Auf Vercel übernimmt stattdessen ein Cron-Aufruf an `POST /api/mail/queue` mit

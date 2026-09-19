@@ -14,14 +14,15 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed-cli.ts",
     "db:reset": "prisma migrate reset --force",
     "mail:worker": "tsx scripts/mail-worker.ts",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
-    "db:deploy": "prisma migrate deploy"
+    "vercel-build": "prisma generate && prisma migrate deploy && tsx scripts/seed-if-empty.ts && next build",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed:if-empty": "tsx scripts/seed-if-empty.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed-cli.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
