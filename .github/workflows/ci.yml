@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Laufende Prüfungen einer älteren Fassung werden abgebrochen,
+# sobald ein neuer Commit auf denselben Branch kommt.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefen:
+    name: Typen, Tests und Build
+    runs-on: ubuntu-latest
+
+    env:
+      # Die Tests legen sich eigene SQLite-Dateien an. Dieser Wert genügt,
+      # damit Prisma beim Erzeugen des Clients und beim Build zufrieden ist.
+      DATABASE_URL: file:./ci.db
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Quellcode holen
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Prisma-Client erzeugen
+        run: npx prisma generate
+
+      - name: Typen prüfen
+        run: npm run typecheck
+
+      - name: Tests ausführen
+        run: npm test
+
+      - name: Anwendung bauen
+        run: npm run build

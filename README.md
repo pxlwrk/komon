@@ -158,6 +158,10 @@ und lassen sich in der Nachrichtenansicht erneut anstoßen.
 | `npm run db:reset` | Datenbank zurücksetzen und neu füllen |
 | `npm run mail:worker` | Versand-Worker starten |
 
+Dieselben drei Tore prüft GitHub Actions bei jedem Push und jeder Pull
+Request: `npm run typecheck`, `npm test` und `npm run build`. Der Workflow
+liegt in `.github/workflows/ci.yml`.
+
 ## Betrieb
 
 ### Auf PostgreSQL wechseln
