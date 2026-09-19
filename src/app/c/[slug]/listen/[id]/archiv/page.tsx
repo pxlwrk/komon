@@ -67,9 +67,9 @@ export default async function ArchivePage({
       ...(search
         ? {
             OR: [
-              { subject: { contains: search } },
-              { bodyText: { contains: search } },
-              { fromAddress: { contains: search } },
+              { subject: { contains: search, mode: 'insensitive' } },
+              { bodyText: { contains: search, mode: 'insensitive' } },
+              { fromAddress: { contains: search, mode: 'insensitive' } },
             ],
           }
         : {}),

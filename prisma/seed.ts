@@ -16,7 +16,9 @@ import { ROLE_PRESETS, serializePermissions } from '../src/lib/permissions';
 
 const prisma = new PrismaClient();
 
-const PASSWORD = 'komon-demo-2026';
+// Das Passwort lässt sich für eine Testinstallation überschreiben, damit
+// öffentlich erreichbare Umgebungen nicht die dokumentierten Zugänge nutzen.
+const PASSWORD = process.env.SEED_PASSWORD?.trim() || 'komon-demo-2026';
 
 type PersonSeed = {
   firstName: string;
@@ -871,7 +873,10 @@ async function main(): Promise<void> {
 
   void gruppeTechnik;
 
-  console.log('\nFertig. Zugänge zum Ausprobieren, alle mit dem Passwort:', PASSWORD);
+  const passwortHinweis = process.env.SEED_PASSWORD
+    ? 'dem gesetzten SEED_PASSWORD'
+    : `"${PASSWORD}"`;
+  console.log(`\nFertig. Zugänge zum Ausprobieren, alle mit ${passwortHinweis}:`);
   console.log('  mira.lindqvist@example.org  Leitung, zusätzlich Plattformverwaltung');
   console.log('  jonas.feld@example.org      Verwaltung');
   console.log('  anna.berger@example.org     Redaktion');

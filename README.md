@@ -23,12 +23,17 @@ in ihren Inhalten und Rechten getrennt.
 ```bash
 npm install
 cp .env.example .env
-npm run db:migrate      # legt die Datenbank an
+docker compose up -d    # startet PostgreSQL
+npm run db:migrate      # legt das Schema an
 npm run db:seed         # füllt Beispieldaten
 npm run dev
 ```
 
 Die Anwendung läuft danach auf <http://localhost:3000>.
+
+Ohne Docker genügt ein beliebiger PostgreSQL ab Version 14. Tragen Sie die
+Verbindung in `DATABASE_URL` ein und legen Sie für die Integrationstests eine
+zweite Datenbank an, auf die `TEST_DATABASE_URL` zeigt.
 
 ### Zugänge aus den Beispieldaten
 
@@ -60,9 +65,9 @@ tests/                    Tests für Fachlogik und Integration
 ### Technik
 
 Next.js 15 mit dem App Router und React 19, TypeScript, Tailwind CSS, Prisma
-mit SQLite, Zod für die Prüfung von Eingaben, Nodemailer für den Versand und
-Vitest für die Tests. Geschrieben wird ausschließlich über Server Actions, die
-Rechte prüft jede Aktion selbst.
+mit PostgreSQL, Zod für die Prüfung von Eingaben, Nodemailer für den Versand
+und Vitest für die Tests. Geschrieben wird ausschließlich über Server Actions,
+die Rechte prüft jede Aktion selbst.
 
 ## Rechte und Rollen
 
@@ -154,6 +159,7 @@ und lassen sich in der Nachrichtenansicht erneut anstoßen.
 | `npm run typecheck` | Typen prüfen |
 | `npm test` | Tests ausführen |
 | `npm run db:migrate` | Änderungen am Datenmodell einspielen |
+| `npm run db:deploy` | Vorhandene Migrationen anwenden, ohne neue zu erzeugen |
 | `npm run db:seed` | Beispieldaten laden |
 | `npm run db:reset` | Datenbank zurücksetzen und neu füllen |
 | `npm run mail:worker` | Versand-Worker starten |
@@ -164,18 +170,26 @@ liegt in `.github/workflows/ci.yml`.
 
 ## Betrieb
 
-### Auf PostgreSQL wechseln
+### Auf Vercel und ähnlichen Plattformen
 
-SQLite genügt für kleine und mittlere Installationen. Für größere Gemeinschaften
-oder mehrere Anwendungsprozesse empfiehlt sich PostgreSQL:
+Serverlose Umgebungen haben ein schreibgeschütztes Dateisystem. Die Anwendung
+kommt damit zurecht:
 
-1. In `prisma/schema.prisma` den `provider` auf `postgresql` setzen
-2. `DATABASE_URL` auf die Verbindungszeichenfolge ändern
-3. `npm run db:migrate` ausführen
+- **Datenbank**: PostgreSQL wird ohnehin vorausgesetzt. Auf Vercel genügt eine
+  Datenbank aus dem Storage-Bereich, die `DATABASE_URL` selbst setzt.
+- **Dateiablage**: Liegt ein `BLOB_READ_WRITE_TOKEN` vor, wandern Dateien nach
+  Vercel Blob statt auf die Platte. Ohne Token bleibt es beim lokalen Ordner.
+  Die Speicherschlüssel sind in beiden Fällen gleich.
+- **Versandweg „log“**: Die Datei unter `storage/outbox` bleibt aus, wenn sich
+  nicht schreiben lässt. Der Versand gilt trotzdem als erfolgt, denn die
+  Nachricht steht vollständig in der Datenbank und ist unter *Nachrichten*
+  einsehbar.
+- **Migration**: Das Skript `vercel-build` führt `prisma migrate deploy` vor
+  dem Bauen aus, sodass das Schema stets zur ausgelieferten Fassung passt.
 
-Das Datenmodell kommt ohne datenbankspezifische Eigenheiten aus. Aufzählbare
-Werte liegen bewusst als Text vor und werden in `src/lib/enums.ts` gepflegt,
-damit beide Datenbanken dasselbe Schema tragen.
+Ein Punkt bleibt offen: Der Versand-Worker braucht einen dauerhaften Prozess.
+Auf Vercel übernimmt stattdessen ein Cron-Aufruf an `POST /api/mail/queue` mit
+dem Kopf `X-Komon-Secret` diese Aufgabe.
 
 ### Sicherheit
 
@@ -204,6 +218,7 @@ npm test
 ```
 
 Die Tests decken die Fachlogik ab: Regeln der Mailinglisten, Aufbereitung von
-E-Mails, Berechtigungen, CSV, iCalendar, Dateinamen und Kalenderraster. Zwei
-Integrationstests arbeiten gegen eine eigene SQLite-Datei und prüfen den Weg
-einer eingehenden Listennachricht sowie die Warteschlange des Versands.
+E-Mails, Berechtigungen, CSV, iCalendar, Dateinamen und Kalenderraster. Drei
+Integrationstests brauchen eine laufende Datenbank und legen sich dafür je ein
+eigenes Schema an: der Weg einer eingehenden Listennachricht, die Warteschlange
+des Versands und der Versand auf einem schreibgeschützten Dateisystem.

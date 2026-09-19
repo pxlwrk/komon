@@ -4,7 +4,28 @@ import path from 'node:path';
 
 import { config } from '@/lib/config';
 
+/**
+ * Dateiablage mit zwei Wegen.
+ *
+ * Ohne weitere Einrichtung landen Dateien im lokalen Dateisystem. Liegt ein
+ * Token für Vercel Blob vor, wandern sie dorthin. Das ist auf serverlosen
+ * Plattformen nötig, deren Dateisystem schreibgeschützt ist.
+ *
+ * Der Speicherschlüssel bleibt in beiden Fällen derselbe, sodass bestehende
+ * Datensätze unverändert weiterverwendet werden können.
+ */
+
 const ROOT = path.resolve(process.cwd(), config.storageDir, 'files');
+
+/** Liegt ein Blob-Token vor, wird dieser Weg genutzt. */
+function blobToken(): string | undefined {
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  return token && token.length > 0 ? token : undefined;
+}
+
+export function usesBlobStorage(): boolean {
+  return blobToken() !== undefined;
+}
 
 /** Entfernt alles, was einen Dateinamen unsicher machen koennte. */
 export function safeFileName(name: string): string {
@@ -21,6 +42,13 @@ function resolveKey(storageKey: string): string {
     throw new Error('Ungültiger Speicherort.');
   }
   return target;
+}
+
+/** Wehrt Schlüssel ab, die aus der Ablage ausbrechen wollen. */
+function assertSafeKey(storageKey: string): void {
+  if (storageKey.startsWith('/') || storageKey.split('/').includes('..')) {
+    throw new Error('Ungültiger Speicherort.');
+  }
 }
 
 export type StoredBlob = {
@@ -51,9 +79,21 @@ export async function storeBuffer(params: {
   const unique = `${randomBytes(8).toString('hex')}-${fileName}`;
   const storageKey = path.posix.join(...segments, unique);
 
-  const target = resolveKey(storageKey);
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, params.data);
+  const token = blobToken();
+  if (token) {
+    const { put } = await import('@vercel/blob');
+    await put(storageKey, params.data, {
+      access: 'public',
+      token,
+      // Der Schlüssel ist bereits eindeutig, ein Zusatz würde ihn unauffindbar machen.
+      addRandomSuffix: false,
+      contentType: params.mimeType?.trim() || guessMimeType(fileName),
+    });
+  } else {
+    const target = resolveKey(storageKey);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, params.data);
+  }
 
   return {
     storageKey,
@@ -85,10 +125,33 @@ export async function storeUpload(params: {
 }
 
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
+  const token = blobToken();
+  if (token) {
+    assertSafeKey(storageKey);
+    const { head } = await import('@vercel/blob');
+    const info = await head(storageKey, { token });
+    const response = await fetch(info.url);
+    if (!response.ok) {
+      throw new Error('Die Datei konnte nicht gelesen werden.');
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
   return readFile(resolveKey(storageKey));
 }
 
 export async function storedFileExists(storageKey: string): Promise<boolean> {
+  const token = blobToken();
+  if (token) {
+    try {
+      assertSafeKey(storageKey);
+      const { head } = await import('@vercel/blob');
+      await head(storageKey, { token });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   try {
     await stat(resolveKey(storageKey));
     return true;
@@ -98,6 +161,13 @@ export async function storedFileExists(storageKey: string): Promise<boolean> {
 }
 
 export async function deleteStoredFile(storageKey: string): Promise<void> {
+  const token = blobToken();
+  if (token) {
+    assertSafeKey(storageKey);
+    const { del } = await import('@vercel/blob');
+    await del(storageKey, { token });
+    return;
+  }
   await rm(resolveKey(storageKey), { force: true });
 }
 

@@ -1,0 +1,31 @@
+# Postgres für die lokale Entwicklung.
+#
+#   docker compose up -d
+#   npm run db:migrate
+#   npm run db:seed
+#
+# Die Testdatenbank liegt daneben, damit Integrationstests die
+# Entwicklungsdaten nicht anfassen.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: komon-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: komon
+      POSTGRES_PASSWORD: komon
+      POSTGRES_DB: komon
+    ports:
+      - '5432:5432'
+    volumes:
+      - komon-postgres:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U komon -d komon']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  komon-postgres:

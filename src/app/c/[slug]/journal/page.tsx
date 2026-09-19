@@ -46,7 +46,7 @@ export default async function JournalPage({
       : {}),
     ...(query.art && journalTypeValues.includes(query.art as never) ? { type: query.art } : {}),
     ...(search
-      ? { OR: [{ title: { contains: search } }, { summary: { contains: search } }, { content: { contains: search } }] }
+      ? { OR: [{ title: { contains: search, mode: 'insensitive' } }, { summary: { contains: search, mode: 'insensitive' } }, { content: { contains: search, mode: 'insensitive' } }] }
       : {}),
     ...(context.can('journal.publish') ? {} : { OR: [{ visibility: { not: 'STAFF' } }, { authorId: context.user.id }] }),
   };

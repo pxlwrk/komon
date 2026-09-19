@@ -16,10 +16,25 @@ jobs:
     name: Typen, Tests und Build
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: komon
+          POSTGRES_PASSWORD: komon
+          POSTGRES_DB: komon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U komon -d komon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
-      # Die Tests legen sich eigene SQLite-Dateien an. Dieser Wert genügt,
-      # damit Prisma beim Erzeugen des Clients und beim Build zufrieden ist.
-      DATABASE_URL: file:./ci.db
+      DATABASE_URL: postgresql://komon:komon@localhost:5432/komon?schema=public
+      # Die Integrationstests legen sich je Lauf ein eigenes Schema an.
+      TEST_DATABASE_URL: postgresql://komon:komon@localhost:5432/komon?schema=public
       NEXT_TELEMETRY_DISABLED: '1'
 
     steps:
@@ -37,6 +52,9 @@ jobs:
 
       - name: Prisma-Client erzeugen
         run: npx prisma generate
+
+      - name: Datenbank aufbauen
+        run: npx prisma migrate deploy
 
       - name: Typen prüfen
         run: npm run typecheck

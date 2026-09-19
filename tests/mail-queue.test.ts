@@ -13,7 +13,7 @@ import { createTestDatabase } from './helpers/db';
  */
 
 let prisma: PrismaClient;
-let cleanup: () => void;
+let cleanup: () => Promise<void>;
 let storageDir: string;
 let communityId: string;
 
@@ -42,8 +42,8 @@ beforeAll(async () => {
   communityId = community.id;
 });
 
-afterAll(() => {
-  cleanup();
+afterAll(async () => {
+  await cleanup();
   rmSync(storageDir, { recursive: true, force: true });
   vi.unstubAllEnvs();
 });

@@ -178,9 +178,6 @@ type SendArgs = {
 /** Versendet eine einzelne Nachricht ueber den konfigurierten Weg. */
 async function deliver(args: SendArgs): Promise<string> {
   if (config.mail.transport === 'log') {
-    // path.resolve beachtet auch einen absoluten Wert in STORAGE_DIR.
-    const dir = path.resolve(process.cwd(), config.storageDir, 'outbox');
-    await mkdir(dir, { recursive: true });
     const id = `${Date.now()}-${randomBytes(4).toString('hex')}`;
     const lines = [
       `From: ${args.from}`,
@@ -191,7 +188,22 @@ async function deliver(args: SendArgs): Promise<string> {
       '',
       args.text,
     ].filter(Boolean);
-    await writeFile(path.join(dir, `${id}.eml`), lines.join('\n'), 'utf8');
+
+    // Die Nachricht steht ohnehin vollstaendig in der Datenbank. Die Datei ist
+    // nur eine Bequemlichkeit fuer die Entwicklung und darf auf einem
+    // schreibgeschuetzten Dateisystem ausbleiben, ohne den Versand zu stoppen.
+    try {
+      // path.resolve beachtet auch einen absoluten Wert in STORAGE_DIR.
+      const dir = path.resolve(process.cwd(), config.storageDir, 'outbox');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, `${id}.eml`), lines.join('\n'), 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== 'EROFS' && code !== 'EACCES' && code !== 'EPERM') {
+        throw error;
+      }
+    }
+
     return `log-${id}`;
   }
 

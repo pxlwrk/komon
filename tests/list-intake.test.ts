@@ -9,7 +9,7 @@ import { createTestDatabase } from './helpers/db';
  */
 
 let prisma: PrismaClient;
-let cleanup: () => void;
+let cleanup: () => Promise<void>;
 
 const ids = {
   community: '',
@@ -100,8 +100,8 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => {
-  cleanup();
+afterAll(async () => {
+  await cleanup();
 });
 
 describe('receiveListMessage', () => {

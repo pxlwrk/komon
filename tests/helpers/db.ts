@@ -1,18 +1,29 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Richtet eine eigene SQLite-Datei für Integrationstests ein, damit die
- * Entwicklungsdaten unberührt bleiben.
+ * Richtet für Integrationstests ein eigenes Schema in der Testdatenbank ein.
+ *
+ * Jeder Testlauf bekommt ein frisches Schema, sodass mehrere Dateien
+ * nebeneinander laufen können, ohne sich in die Quere zu kommen. Am Ende wird
+ * das Schema wieder verworfen.
+ *
+ * Die Verbindung kommt aus TEST_DATABASE_URL, ersatzweise aus DATABASE_URL.
+ * Lokal genügt `docker compose up -d`, in CI übernimmt das der Postgres-Dienst.
  */
-export function createTestDatabase(): { prisma: PrismaClient; cleanup: () => void } {
-  const directory = mkdtempSync(path.join(tmpdir(), 'komon-test-'));
-  const file = path.join(directory, 'test.db');
-  const url = `file:${file}`;
+export function createTestDatabase(): { prisma: PrismaClient; cleanup: () => Promise<void> } {
+  const base = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!base) {
+    throw new Error(
+      'Für die Integrationstests fehlt TEST_DATABASE_URL oder DATABASE_URL. ' +
+        'Lokal hilft "docker compose up -d".',
+    );
+  }
+
+  const schema = `test_${randomBytes(6).toString('hex')}`;
+  const url = withSchema(base, schema);
 
   execFileSync('npx', ['prisma', 'db', 'push', '--skip-generate', '--accept-data-loss'], {
     env: { ...process.env, DATABASE_URL: url },
@@ -23,9 +34,21 @@ export function createTestDatabase(): { prisma: PrismaClient; cleanup: () => voi
 
   return {
     prisma,
-    cleanup: () => {
-      void prisma.$disconnect();
-      rmSync(directory, { recursive: true, force: true });
+    cleanup: async () => {
+      try {
+        await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      } catch {
+        // Ein übrig gebliebenes Schema stört keinen weiteren Lauf.
+      } finally {
+        await prisma.$disconnect();
+      }
     },
   };
+}
+
+/** Setzt den Schema-Parameter einer Verbindungszeichenfolge. */
+function withSchema(base: string, schema: string): string {
+  const url = new URL(base);
+  url.searchParams.set('schema', schema);
+  return url.toString();
 }

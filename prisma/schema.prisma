@@ -1,16 +1,16 @@
 // Komon - Datenmodell fuer das Management mehrerer Communities.
 //
-// Hinweis: Die Datenbank ist SQLite, damit die Anwendung ohne zusaetzliche
-// Infrastruktur startet. SQLite kennt in Prisma keine Enums und keine
-// Skalar-Listen. Alle aufzaehlbaren Werte liegen deshalb als String vor und
-// werden in src/lib/enums.ts zentral definiert und per Zod validiert.
+// Hinweis: Die Datenbank ist PostgreSQL. Aufzaehlbare Werte liegen bewusst als
+// String vor statt als Enum und werden in src/lib/enums.ts zentral definiert
+// und per Zod validiert. Das haelt das Schema schlank und Aenderungen an einer
+// Auswahlliste brauchen keine Migration.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

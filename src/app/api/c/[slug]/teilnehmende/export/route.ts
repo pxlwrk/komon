@@ -22,10 +22,10 @@ export async function GET(
         ? {
             person: {
               OR: [
-                { firstName: { contains: search } },
-                { lastName: { contains: search } },
-                { primaryEmail: { contains: search } },
-                { organization: { contains: search } },
+                { firstName: { contains: search, mode: 'insensitive' } },
+                { lastName: { contains: search, mode: 'insensitive' } },
+                { primaryEmail: { contains: search, mode: 'insensitive' } },
+                { organization: { contains: search, mode: 'insensitive' } },
               ],
             },
           }
