@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-slate-900;
+  }
+
+  /* Formularfelder erhalten durchgaengig dieselbe Anmutung. */
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='search'],
+  select,
+  textarea {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+      shadow-sm transition placeholder:text-slate-400
+      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25;
+  }
+
+  select {
+    @apply pr-8;
+  }
+
+  textarea {
+    @apply min-h-[120px] leading-relaxed;
+  }
+
+  label {
+    @apply block text-sm font-medium text-slate-700;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/40;
+  }
+
+  input[type='radio'] {
+    @apply rounded-full;
+  }
+}
+
+@layer components {
+  .field {
+    @apply space-y-1.5;
+  }
+
+  .hint {
+    @apply text-xs text-slate-500;
+  }
+
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .prose-note {
+    @apply whitespace-pre-wrap text-sm leading-relaxed text-slate-700;
+  }
+}
+
+/* Dezente Bildlaufleisten in den Seitenbereichen. */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
